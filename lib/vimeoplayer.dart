@@ -1,11 +1,14 @@
 library vimeoplayer;
 
-import 'package:flutter/material.dart';
-import 'package:video_player/video_player.dart';
-import 'package:flutter/services.dart';
-import 'src/quality_links.dart';
 import 'dart:async';
+
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:http/http.dart';
+import 'package:video_player/video_player.dart';
+
 import 'src/fullscreen_player.dart';
+import 'src/quality_links.dart';
 
 //Класс видео плеера
 class VimeoPlayer extends StatefulWidget {
@@ -13,18 +16,45 @@ class VimeoPlayer extends StatefulWidget {
   final bool autoPlay;
   final bool looping;
   final int position;
+  final Color overlayElementColor;
+  final Color playedColor;
+  final Color backgroundColor;
+  final Color bufferedColor;
+  final Color progressIndicatorColor;
+  final bool fullscreenable;
+  final bool dismissOverlayOnPlay;
+  final Client client;
 
   VimeoPlayer({
     @required this.id,
     this.autoPlay,
     this.looping,
     this.position,
+    this.overlayElementColor,
+    this.playedColor = const Color(0xFF22A3D2),
+    this.backgroundColor = const Color(0x5515162B),
+    this.bufferedColor = const Color(0x5583D8F7),
+    this.progressIndicatorColor = const Color(0xFF22A3D2),
+    this.fullscreenable = true,
+    this.dismissOverlayOnPlay = true,
+    this.client,
     Key key,
   }) : super(key: key);
 
   @override
-  _VimeoPlayerState createState() =>
-      _VimeoPlayerState(id, autoPlay, looping, position);
+  _VimeoPlayerState createState() => _VimeoPlayerState(
+      id,
+      autoPlay,
+      looping,
+      position,
+      overlayElementColor,
+      playedColor,
+      backgroundColor,
+      bufferedColor,
+      progressIndicatorColor,
+      fullscreenable,
+      dismissOverlayOnPlay,
+      client);
 }
 
 class _VimeoPlayerState extends State<VimeoPlayer> {
@@ -34,8 +64,28 @@ class _VimeoPlayerState extends State<VimeoPlayer> {
   bool _overlay = true;
   bool fullScreen = false;
   int position;
+  Color overlayElementColor;
+  Color playedColor;
+  Color backgroundColor;
+  Color bufferedColor;
+  Color progressIndicatorColor;
+  bool fullscreenable;
+  bool dismissOverlayOnPlay;
+  Client client;
 
-  _VimeoPlayerState(this._id, this.autoPlay, this.looping, this.position);
+  _VimeoPlayerState(
+      this._id,
+      this.autoPlay,
+      this.looping,
+      this.position,
+      this.overlayElementColor,
+      this.playedColor,
+      this.backgroundColor,
+      this.bufferedColor,
+      this.progressIndicatorColor,
+      this.fullscreenable,
+      this.dismissOverlayOnPlay,
+      this.client);
 
   //Custom controller
   VideoPlayerController _controller;
@@ -65,7 +115,7 @@ class _VimeoPlayerState extends State<VimeoPlayer> {
   @override
   void initState() {
     //Create class
-    _quality = QualityLinks(_id);
+    _quality = QualityLinks(_id, client);
 
     //Инициализация контроллеров видео при получении данных из Vimeo
     _quality.getQualitiesSync().then((value) {
@@ -147,8 +197,8 @@ class _VimeoPlayerState extends State<VimeoPlayer> {
                       heightFactor: 6,
                       child: CircularProgressIndicator(
                         strokeWidth: 4,
-                        valueColor:
-                            AlwaysStoppedAnimation<Color>(Color(0xFF22A3D2)),
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                            progressIndicatorColor),
                       ));
                 }
               }),
@@ -306,13 +356,30 @@ class _VimeoPlayerState extends State<VimeoPlayer> {
                         top: videoHeight / 2 - 30,
                         bottom: videoHeight / 2 - 30),
                     icon: _controller.value.isPlaying
-                        ? Icon(Icons.pause, size: 60.0)
-                        : Icon(Icons.play_arrow, size: 60.0),
+                        ? Icon(
+                            Icons.pause,
+                            size: 60.0,
+                            color: overlayElementColor != null
+                                ? overlayElementColor
+                                : Theme.of(context).iconTheme.color,
+                          )
+                        : Icon(
+                            Icons.play_arrow,
+                            size: 60.0,
+                            color: overlayElementColor != null
+                                ? overlayElementColor
+                                : Theme.of(context).iconTheme.color,
+                          ),
                     onPressed: () {
                       setState(() {
-                        _controller.value.isPlaying
-                            ? _controller.pause()
-                            : _controller.play();
+                        if (_controller.value.isPlaying) {
+                          _controller.pause();
+                        } else {
+                          _controller.play();
+                          if (dismissOverlayOnPlay) {
+                            _overlay = false;
+                          }
+                        }
                       });
                     }),
               ),
@@ -362,7 +429,13 @@ class _VimeoPlayerState extends State<VimeoPlayer> {
               Container(
                 margin: EdgeInsets.only(left: videoWidth + videoMargin - 48),
                 child: IconButton(
-                    icon: Icon(Icons.settings, size: 26.0),
+                    icon: Icon(
+                      Icons.settings,
+                      size: 26.0,
+                      color: overlayElementColor != null
+                          ? overlayElementColor
+                          : Theme.of(context).iconTheme.color,
+                    ),
                     onPressed: () {
                       position = _controller.value.position.inSeconds;
                       _seek = true;
@@ -387,9 +460,9 @@ class _VimeoPlayerState extends State<VimeoPlayer> {
                 _controller,
                 allowScrubbing: true,
                 colors: VideoProgressColors(
-                  playedColor: Color(0xFF22A3D2),
-                  backgroundColor: Color(0x5515162B),
-                  bufferedColor: Color(0x5583D8F7),
+                  playedColor: playedColor,
+                  backgroundColor: backgroundColor,
+                  bufferedColor: bufferedColor,
                 ),
                 padding: EdgeInsets.only(top: 2),
               ),
@@ -408,10 +481,17 @@ class _VimeoPlayerState extends State<VimeoPlayer> {
               Container(
                 width: 46,
                 alignment: Alignment(0, 0),
-                child: Text(value.position.inMinutes.toString() +
-                    ':' +
-                    (value.position.inSeconds - value.position.inMinutes * 60)
-                        .toString()),
+                child: Text(
+                    value.position.inMinutes.toString() +
+                        ':' +
+                        (value.position.inSeconds -
+                                value.position.inMinutes * 60)
+                            .toString()
+                            .padLeft(2, '0'),
+                    style: TextStyle(
+                        color: overlayElementColor != null
+                            ? overlayElementColor
+                            : Theme.of(context).iconTheme.color)),
               ),
               Container(
                 height: 20,
@@ -420,9 +500,9 @@ class _VimeoPlayerState extends State<VimeoPlayer> {
                   _controller,
                   allowScrubbing: true,
                   colors: VideoProgressColors(
-                    playedColor: Color(0xFF22A3D2),
-                    backgroundColor: Color(0x5515162B),
-                    bufferedColor: Color(0x5583D8F7),
+                    playedColor: playedColor,
+                    backgroundColor: backgroundColor,
+                    bufferedColor: bufferedColor,
                   ),
                   padding: EdgeInsets.only(top: 8.0, bottom: 8.0),
                 ),
@@ -430,10 +510,17 @@ class _VimeoPlayerState extends State<VimeoPlayer> {
               Container(
                 width: 46,
                 alignment: Alignment(0, 0),
-                child: Text(value.duration.inMinutes.toString() +
-                    ':' +
-                    (value.duration.inSeconds - value.duration.inMinutes * 60)
-                        .toString()),
+                child: Text(
+                    value.duration.inMinutes.toString() +
+                        ':' +
+                        (value.duration.inSeconds -
+                                value.duration.inMinutes * 60)
+                            .toString()
+                            .padLeft(2, '0'),
+                    style: TextStyle(
+                        color: overlayElementColor != null
+                            ? overlayElementColor
+                            : Theme.of(context).iconTheme.color)),
               ),
             ],
           );

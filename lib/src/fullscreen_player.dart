@@ -77,7 +77,7 @@ class _FullscreenPlayerState extends State<FullscreenPlayer> {
     if (autoPlay) _controller.play();
 
     // Подгрузка списка качеств видео
-    _quality = QualityLinks(_id); //Create class
+    _quality = QualityLinks(_id, null); //Create class
     _quality.getQualitiesSync().then((value) {
       _qualityValues = value;
     });
